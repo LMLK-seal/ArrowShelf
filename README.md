@@ -155,15 +155,23 @@ The ArrowShelf API is designed to be simple and intuitive.
 
 ## ⚡ Performance & Roadmap
 
-### 🏷️ Current Version (V1.0.0)
-This version uses a robust TCP-based transport layer. It successfully proves the architecture works but does not yet show a significant speedup over pickling due to the overhead of converting data to and from the Arrow format.
-
-### 🚀 Coming Soon (V2.0)
+### 🚀 Current Version (V2.1)
 <<<<<<< HEAD
-The real magic comes in V2.0, which will replace the TCP layer with **true zero-copy shared memory**. This will eliminate the data transfer bottleneck entirely and is projected to deliver a **10-100x speedup** over standard pickling for large datasets. Stay tuned! 
-=======
-The real magic comes in V2.0, which will replace the TCP layer with **true zero-copy shared memory**. This will eliminate the data transfer bottleneck entirely and is projected to deliver a larger speedup over standard pickling for large datasets. Stay tuned! 
->>>>>>> 85733d764e5e4e041a31dd45ba8524e8e972b790
+The real magic comes in V2.0, which will replace the TCP layer with **true zero-copy shared memory**. This will eliminate the data transfer bottleneck entirely and is projected to deliver a larger over standard pickling for large datasets.
+
+⚡ Performance: The Proof is in the Numbers
+Benchmarks show that using arrowshelf.get_arrow() to perform computations directly on shared memory provides a significant speedup over standard pickle-based multiprocessing, and this advantage grows with data size.
+*(These results are from a real run of the included benchmark script)*
+**Generated code**
+
+```
+--- FINAL SUMMARY ---
+| DataFrame Size (MB) | Pickle (s) | ArrowShelf (->Pandas) | ArrowShelf (Native) | Speedup (Native vs Pickle) |
+|---------------------|------------|----------------------|---------------------|----------------------------|
+| 38.15               | 0.7189     | 0.7337               | 0.5644              | 1.27x                      |
+| 190.73              | 0.9378     | 0.8919               | 0.5957              | 1.57x                      |
+| 381.47              | 2.3510     | 2.7555               | 0.8500              | 2.77x                      |
+```
 
 ### 🔮 Future Versions
 - **📊 In-Server Querying (V3.0)**: Run SQL queries directly on the in-memory data without ever moving it to Python
