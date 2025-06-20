@@ -1,4 +1,5 @@
 # ArrowShelf
+<<<<<<< HEAD
 
 [![PyPI version](https://badge.fury.io/py/arrowshelf.svg)](https://badge.fury.io/py/arrowshelf) <!-- You'll activate this when you publish -->
 ![Python Version](https://img.shields.io/pypi/pyversions/arrowshelf)
@@ -24,3 +25,6 @@ ArrowShelf runs a tiny, high-performance daemon (written in Rust) that manages a
 
 ```bash
 pip install arrowshelf
+=======
+A lightning-fast, zero-copy, cross-process data store for Python using Apache Arrow.
+>>>>>>> 7eb98e272c91d464bae2a9eca681bfa8a2560984
