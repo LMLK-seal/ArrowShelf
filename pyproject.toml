@@ -1,0 +1,36 @@
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "arrowshelf"
+version = "1.0.0"
+description = "A lightning-fast, zero-copy, cross-process data store for Python using Apache Arrow."
+readme = "README.md"
+authors = [{name = "Yaniv Schwartz", email = "Yaniv.schwartz1@gmail.com"}]
+license = {file = "LICENSE"}
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Rust",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+]
+requires-python = ">=3.8"
+dependencies = [
+    "pandas>=1.0",
+    "pyarrow>=10.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/LMLK-Seal/arrowshelf"
+Repository = "https://github.com/LMLK-Seal/arrowshelf"
+
+[tool.maturin]
+manifest-path = "Cargo.toml"
+rustc-flags = ["--strip=symbols"]
+bin = "arrowshelfd"
+target-dir = "arrowshelf/bin"
