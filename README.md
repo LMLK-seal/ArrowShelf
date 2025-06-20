@@ -20,7 +20,8 @@ ArrowShelf runs a tiny, high-performance daemon (written in Rust) that manages a
 
 **The Data Scientist:**
 The Pain: A data scientist, let's call her Priya, has a 10 GB CSV file of user activity. She needs to clean it, calculate new features, and prepare it for a machine learning model. Her Python script, running on a powerful 16-core machine, takes 90 minutes to run. Why? Because Pandas runs on a single core. She tries to use multiprocessing, but finds it's even slower because Python spends all its time pickling and unpickling 10 GB of data for each of the 16 processes.
-How Memry Helps (The Real-World Benefit):
+
+**How Memry Helps:**
 Priya runs key = memry.put(my_dataframe) once. This takes a few seconds.
 She starts her 16 worker processes, but instead of sending them a massive DataFrame, she sends them the tiny string key.
 Each of the 16 processes instantly gets access to the full, shared DataFrame with zero copy overhead (using the V2.0 shared memory feature).
@@ -30,7 +31,8 @@ What this gives her: She can now run 10 different feature engineering experiment
 
 **The Financial Analyst:**
 The Pain: A quantitative analyst, David, needs to backtest a new trading strategy against 20 years of high-frequency stock data (a 50 GB dataset). His simulation needs to be run thousands of times with different parameters. Each run takes hours, and the dataset is too large to split up easily.
-How Memry Helps (The Real-World Benefit):
+
+**How Memry Helps:**
 David loads the entire 50 GB dataset into Memry once.
 He launches hundreds of simulation processes. Each one gets the key to the master dataset.
 The simulations run in a massively parallel way, each reading the historical data it needs from the zero-copy shared memory.
