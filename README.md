@@ -159,7 +159,7 @@ The ArrowShelf API is designed to be simple and intuitive.
 This version uses a robust TCP-based transport layer. It successfully proves the architecture works but does not yet show a significant speedup over pickling due to the overhead of converting data to and from the Arrow format.
 
 ### 🚀 Coming Soon (V2.0)
-The real magic comes in V2.0, which will replace the TCP layer with **true zero-copy shared memory**. This will eliminate the data transfer bottleneck entirely and is projected to deliver a **10-100x speedup** over standard pickling for large datasets. Stay tuned! 
+The real magic comes in V2.0, which will replace the TCP layer with **true zero-copy shared memory**. This will eliminate the data transfer bottleneck entirely and is projected to deliver a larger speedup over standard pickling for large datasets. Stay tuned! 
 
 ### 🔮 Future Versions
 - **📊 In-Server Querying (V3.0)**: Run SQL queries directly on the in-memory data without ever moving it to Python
