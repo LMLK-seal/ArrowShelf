@@ -78,6 +78,16 @@ ArrowShelf is designed to attack the data transfer bottleneck (`pickle`). Benchm
 
 However, for heavily CPU-bound parallel tasks on a single machine, performance is ultimately constrained by Python's Global Interpreter Lock (GIL).
 
+This benchmark simulates a demanding mathematical task on a **10,000,000 row DataFrame** across a range of core counts.
+
+| Num Cores | Pickle Time (s) | ArrowShelf Time (s) | **Speedup Factor** |
+|-----------|-----------------|---------------------|--------------------|
+| 2         | 1.95 s          | **1.35 s**          | **1.44x**          |
+| 4         | 1.79 s          | **1.32 s**          | **1.36x**          |
+| 8         | 1.72 s          | **1.45 s**          | 1.19x              |
+| 12        | 1.70 s          | **1.58 s**          | 1.08x              |
+
+
 ### Benchmark: Heavy CPU Workload
 
 *Test: A complex mathematical simulation on a 10,000,000 row DataFrame using 12 cores.*
@@ -87,6 +97,15 @@ However, for heavily CPU-bound parallel tasks on a single machine, performance i
 | Pickle     | **1.72 s** | (Each worker gets a small, independent data chunk) |
 | ArrowShelf | 4.02 s     | (1.3s one-time `put` + 2.7s parallel computation) |
 | **Speedup**| **0.43x**  |                                                 |
+
+### Iterative Analysis: The Jupyter Notebook Advantage
+
+In interactive workflows (like a Jupyter notebook), where you run many different analyses on the same dataset, ArrowShelf's "pay-once" model is a game-changer.
+
+*   **Pickle** pays the full, slow data-transfer cost on **every single run**.
+*   **ArrowShelf** pays a small, one-time setup cost to place the data in shared memory. Every subsequent parallel task is then blazingly fast.
+
+This makes ArrowShelf the ideal tool for fluid, iterative data exploration.
 
 **The Verdict & Analysis:**
 
