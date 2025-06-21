@@ -13,10 +13,10 @@ HOW TO USE THIS SCRIPT:
 
 2.  If you don't have a large CSV, create one by running this script
     with the --create-sample flag:
-    >> python process_data.py --create-sample large_dataset.csv
+    >> python examples/process_data.py --create-sample large_dataset.csv
 
 3.  Run the processing on your CSV file:
-    >> python process_data.py large_dataset.csv --cores 8
+    >> python examples/process_data.py large_dataset.csv --cores 8
 
     (Replace 8 with the number of CPU cores you want to use)
 -----------------------------------------------------------------------------
