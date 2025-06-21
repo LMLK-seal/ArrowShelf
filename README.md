@@ -69,7 +69,57 @@ if __name__ == "__main__":
     arrowshelf.delete(data_key)
     print("ArrowShelf processing complete!")
 ```
+---
 
+## ⚡ Real-World Example: `process_data.py`
+
+To see the full power of ArrowShelf in action, we've included a complete, real-world example script in the `examples/` directory. This script shows you how to:
+
+1.  Load a large CSV file from disk.
+2.  Use command-line arguments to control the number of CPU cores.
+3.  Perform a complex parallel computation using ArrowShelf's high-performance native Arrow interface.
+4.  Time the entire workflow and see the results.
+
+### How to Run the Example
+
+**1. Create a Large Sample Dataset (Optional)**
+
+If you don't have a large CSV file handy, you can create a 10-million-row sample file with this command:
+
+```bash
+# This will create the file 'my_big_data.csv' in your current directory
+python examples/process_data.py --create-sample my_big_data.csv
+```
+
+**2. Run the Processing Script**
+Make sure your ArrowShelf server is running in another terminal (python -m arrowshelf.server). Then, run the script, telling it which file to process and how many cores to use.
+
+```bash
+# Process 'my_big_data.csv' using 8 CPU cores
+python examples/process_data.py my_big_data.csv --cores 8
+```
+
+**You will see a detailed output like this:**
+
+```
+Loading data from 'my_big_data.csv'...
+Successfully loaded DataFrame with 10,000,000 rows (381.47 MB).
+Connecting to ArrowShelf server...
+Connection successful.
+
+Starting parallel processing on 8 cores...
+ -> Data placed on shelf in 0.9123 seconds.
+ -> Parallel computation finished in 2.5432 seconds.
+----------------------------------------
+✅ Total processing time: 3.4555 seconds
+   Results from workers: [0.001, 0.001, ..., 0.001]
+----------------------------------------
+
+Cleaning up shared memory object from shelf...
+Cleanup complete.
+```
+
+This script is the perfect starting point for adapting ArrowShelf to your own data processing pipelines.
 ---
 
 ## ⚡ Performance: The Proof is in the Numbers
