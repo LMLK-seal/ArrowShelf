@@ -1,79 +1,108 @@
 import multiprocessing as mp
 import pandas as pd
 import numpy as np
+import pyarrow.compute as pc
 import time
 import arrowshelf
 import sys
+import os
 
-print("--- ArrowShelf Benchmark (V1 / TCP) ---")
-print("INFO: This script assumes the ArrowShelf server is running in a separate terminal.")
-print("      (Run 'python -m arrowshelf.server' to launch it)")
+# --- Worker Functions (for a more realistic workload) ---
+def complex_computation_pickle(df_chunk):
+    """A worker that receives a pickled DataFrame chunk."""
+    res = (df_chunk['E'] * np.sin(df_chunk['A'])).sum()
+    return res
 
-try:
-    if not arrowshelf.client._connection.is_connected():
-        print("\nERROR: Could not connect to ArrowShelf server. Please start it first.")
-        sys.exit(1)
-except arrowshelf.ConnectionError as e:
-    print(f"\nERROR: Connection failed: {e}")
-    sys.exit(1)
+def complex_computation_native_arrow(key):
+    """A worker that uses ArrowShelf's native Arrow access."""
+    table = arrowshelf.get_arrow(key)
+    res = pc.sum(pc.multiply(table.column('E'), pc.sin(table.column('A')))).as_py()
+    return res
 
-print("INFO: Connected to ArrowShelf server successfully.")
-
-def worker_pickle(df):
-    return df.shape
-
-def worker_arrowshelf(key):
-    df = arrowshelf.get(key)
-    return df.shape
-
-def run_benchmark(num_rows):
-    print(f"\n--- Benchmarking with {num_rows:,} rows ---")
+# --- SCENARIO 1: Massively Parallel Computation ---
+def run_scaling_benchmark(num_rows=5_000_000):
+    print("\n\n--- SCENARIO 1: Massively Parallel Core Scaling ---")
+    print(f"Testing with a {num_rows:,} row DataFrame across different core counts.")
+    
     df = pd.DataFrame(np.random.randn(num_rows, 5), columns=list('ABCDE'))
-    df_size_mb = df.memory_usage(deep=True).sum() / (1024 * 1024)
-    print(f"DataFrame size: {df_size_mb:.2f} MB")
+    key = arrowshelf.put(df)
+    
+    print("\n| Num Cores | Pickle Time (s) | ArrowShelf Time (s) | Speedup Factor |")
+    print("|-----------|-----------------|---------------------|----------------|")
+    
+    core_counts = [2, 4, 8] # A shorter list for quicker tests
+    max_cores = os.cpu_count() or 1
+    if max_cores > 8 and max_cores not in core_counts:
+        core_counts.append(max_cores)
 
-    num_processes = 4
-    tasks = range(num_processes)
+    for cores in core_counts:
+        df_chunks = np.array_split(df, cores)
+        start = time.time()
+        with mp.Pool(processes=cores) as pool:
+            pool.map(complex_computation_pickle, df_chunks)
+        pickle_duration = time.time() - start
 
-    start_time_pickle = time.time()
-    with mp.Pool(processes=num_processes) as pool:
-        pool.map(worker_pickle, [df for _ in tasks])
-    pickle_duration = time.time() - start_time_pickle
-    print(f"Standard (Pickle): {pickle_duration:.4f} seconds")
+        start = time.time()
+        with mp.Pool(processes=cores) as pool:
+            pool.map(complex_computation_native_arrow, [key] * cores)
+        arrowshelf_duration = time.time() - start
 
-    key = None
-    try:
-        start_time_memry = time.time()
-        key = arrowshelf.put(df)
-        with mp.Pool(processes=num_processes) as pool:
-            pool.map(worker_arrowshelf, [key for _ in tasks])
-        end_time_memry = time.time() - start_time_memry
-        print(f"ArrowShelf (TCP):   {end_time_memry:.4f} seconds")
+        speedup = pickle_duration / arrowshelf_duration
+        print(f"| {cores:<9} | {pickle_duration:<15.4f} | {arrowshelf_duration:<19.4f} | {speedup:<14.2f}x |")
+        
+    arrowshelf.delete(key)
 
-        speedup = pickle_duration / end_time_memry
-        print(f"Speedup: {speedup:.2f}x")
-        return df_size_mb, pickle_duration, end_time_memry
-    finally:
-        if key:
-            arrowshelf.delete(key)
+# --- SCENARIO 2: Iterative Analysis ---
+def run_iterative_benchmark(num_rows=5_000_000, num_processes=8):
+    print("\n\n--- SCENARIO 2: Iterative & Interactive Analysis ---")
+    print(f"Simulating 5 sequential parallel tasks on the same {num_rows:,} row DataFrame.")
+    
+    df = pd.DataFrame(np.random.randn(num_rows, 5), columns=list('ABCDE'))
+    
+    print("\nRunning Pickle workflow (pays data transfer cost every time)...")
+    pickle_start = time.time()
+    df_chunks = np.array_split(df, num_processes)
+    for _ in range(5): # Loop for 5 tasks
+        with mp.Pool(processes=num_processes) as pool: pool.map(complex_computation_pickle, df_chunks)
+    pickle_total_time = time.time() - pickle_start
+    print(f"-> Pickle total time for 5 tasks: {pickle_total_time:.4f} seconds")
+
+    print("\nRunning ArrowShelf workflow (pays data setup cost only once)...")
+    arrowshelf_start = time.time()
+    key = arrowshelf.put(df)
+    put_time = time.time() - arrowshelf_start
+    print(f"  (Initial 'put' cost: {put_time:.4f} seconds)")
+
+    tasks_start = time.time()
+    for _ in range(5): # Loop for 5 tasks
+        with mp.Pool(processes=num_processes) as pool: pool.map(complex_computation_native_arrow, [key] * num_processes)
+    arrowshelf_total_time = time.time() - arrowshelf_start
+    tasks_only_time = time.time() - tasks_start
+    
+    print(f"  (Time for 5 parallel tasks: {tasks_only_time:.4f} seconds)")
+    print(f"-> ArrowShelf total time for 5 tasks: {arrowshelf_total_time:.4f} seconds")
+    
+    speedup = pickle_total_time / arrowshelf_total_time
+    print(f"\n>> Iterative Workflow Speedup: {speedup:.2f}x <<")
+    
+    arrowshelf.delete(key)
+
 
 if __name__ == "__main__":
-    row_counts = [100_000, 1_000_000, 5_000_000, 10_000_000]
-    results = []
+    print("--- ArrowShelf Advanced Benchmark (V2.1) ---")
+    print("This benchmark demonstrates ArrowShelf's power in two key scenarios:")
     
     try:
-        for rows in row_counts:
-            results.append(run_benchmark(rows))
+        print("\nINFO: Pinging ArrowShelf server...")
+        arrowshelf.list_keys()
+        print("INFO: Connected to ArrowShelf server successfully.")
+        
+        # Run the actual benchmarks
+        run_scaling_benchmark()
+        run_iterative_benchmark()
+
     except arrowshelf.ConnectionError as e:
         print(f"\nBenchmark failed due to a connection error: {e}")
-        print("Please ensure the ArrowShelf server is still running.")
     finally:
         arrowshelf.close()
-        print("\nBenchmark finished. You can now stop the server with Ctrl+C in its terminal.")
-    
-    print("\n--- Summary ---")
-    print("| DataFrame Size (MB) | Pickle (s) | ArrowShelf (s) | Speedup |")
-    print("|---------------------|------------|----------------|---------|")
-    for size, p_dur, m_dur in results:
-        speedup = p_dur / m_dur if m_dur > 0 else float('inf')
-        print(f"| {size:<19.2f} | {p_dur:<10.4f} | {m_dur:<14.4f} | {speedup:<7.2f}x |")
+        print("\nAdvanced benchmark finished.")

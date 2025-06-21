@@ -1,6 +1,8 @@
 import json
 import socket
 import io
+import mmap
+import os
 import pandas as pd
 import pyarrow as pa
 import pyarrow.ipc
@@ -9,130 +11,99 @@ from .exceptions import ConnectionError, ServerError
 SERVER_ADDRESS = ("127.0.0.1", 56789)
 
 class ArrowShelfConnection:
-    """Manages a persistent connection to the ArrowShelf daemon."""
-    def __init__(self):
-        self.sock = None
-        self.reader = None
-
+    def __init__(self): self.sock,self.reader = None,None
     def connect(self):
-        if self.sock and self.is_connected():
-            return
+        if self.sock: return
         try:
-            self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.sock.connect(SERVER_ADDRESS)
+            self.sock = socket.create_connection(SERVER_ADDRESS, timeout=2)
             self.reader = self.sock.makefile('rb')
         except (socket.error, ConnectionRefusedError) as e:
-            self.sock = None
-            self.reader = None
-            raise ConnectionError(
-                f"Could not connect to ArrowShelf daemon at {SERVER_ADDRESS[0]}:{SERVER_ADDRESS[1]}. "
-                "Is the server running?"
-            ) from e
-            
+            raise ConnectionError(f"Could not connect to ArrowShelf daemon at {SERVER_ADDRESS}") from e
     def is_connected(self):
         try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as test_sock:
-                test_sock.settimeout(0.5)
-                test_sock.connect(SERVER_ADDRESS)
-            return True
-        except (socket.error, ConnectionRefusedError):
-            return False
-
+            with socket.create_connection(SERVER_ADDRESS, timeout=0.5) as s: return True
+        except (socket.error, ConnectionRefusedError): return False
     def close(self):
-        if self.sock:
-            try:
-                self.sock.close()
-            except socket.error:
-                pass
-            self.sock = None
-            self.reader = None
-
-    def _ensure_connection(self):
-        if not self.sock:
-            self.connect()
-        try:
-            self._send_command_on_socket({'action': 'Ping'})
-            response = self._receive_response_from_reader()
-            if response.get('message') != 'pong':
-                raise ConnectionError("Connection lost")
-        except (socket.error, BrokenPipeError, ConnectionError):
-            self.connect()
-
-    def _send_command_on_socket(self, cmd_dict):
-        payload = (json.dumps(cmd_dict) + '\n').encode('utf-8')
-        self.sock.sendall(payload)
-        
-    def _receive_response_from_reader(self):
+        if self.sock: self.sock.close()
+        self.sock, self.reader = None, None
+    def _send_command(self, cmd):
+        if not self.sock: self.connect()
+        try: self.sock.sendall((json.dumps(cmd) + '\n').encode('utf-8'))
+        except (socket.error, BrokenPipeError): self.connect(); self.sock.sendall((json.dumps(cmd) + '\n').encode('utf-8'))
+    def _receive_response(self):
+        if not self.sock: self.connect()
         line = self.reader.readline()
-        if not line:
-            raise ConnectionError("Daemon closed the connection unexpectedly.")
-        
+        if not line: raise ConnectionError("Daemon closed connection")
         resp = json.loads(line)
-        if resp.get('status') == 'Error':
-            raise ServerError(resp.get('message', 'Unknown server error'))
+        if resp.get('status') == 'Error': raise ServerError(resp.get('message'))
         return resp
-
-    def _read_data(self, data_len):
-        return self.reader.read(data_len)
 
 _connection = ArrowShelfConnection()
 
 def put(df: pd.DataFrame) -> str:
-    """Stores a Pandas DataFrame on the ArrowShelf."""
-    _connection._ensure_connection()
+    """Stores a DataFrame in a shared memory-mapped file."""
     table = pa.Table.from_pandas(df, preserve_index=False)
     sink = io.BytesIO()
     with pa.ipc.new_stream(sink, table.schema) as writer:
         writer.write_table(table)
     data_bytes = sink.getvalue()
-    
-    cmd = {"action": "Put", "data_len": len(data_bytes)}
-    _connection._send_command_on_socket(cmd)
-    _connection.sock.sendall(data_bytes)
-    response = _connection._receive_response_from_reader()
-    return response['message']
+    data_len = len(data_bytes)
+
+    _connection._send_command({"action": "RequestPath"})
+    response = _connection._receive_response()
+    key = response['message']
+    path = response['path']
+
+    with open(path, "wb") as f:
+        f.truncate(data_len)
+    with open(path, "r+b") as f:
+        with mmap.mmap(f.fileno(), 0) as mm:
+            mm.write(data_bytes)
+    return key
 
 def get(key: str) -> pd.DataFrame:
-    """Retrieves a Pandas DataFrame from the ArrowShelf."""
-    _connection._ensure_connection()
-    cmd = {"action": "Get", "key": key}
-    _connection._send_command_on_socket(cmd)
-    response = _connection._receive_response_from_reader()
-    data_len = response['data_len']
-    data_bytes = _connection._read_data(data_len)
-    with pa.ipc.open_stream(data_bytes) as reader:
-        table = reader.read_all()
+    """
+    Retrieves a DataFrame from shared memory. This involves a final copy
+    from Arrow's memory layout to Pandas' memory layout. For highest
+    performance, use get_arrow() instead.
+    """
+    table = get_arrow(key)
     return table.to_pandas()
 
+# --- THE NEW, HIGH-PERFORMANCE FUNCTION ---
+def get_arrow(key: str) -> pa.Table:
+    """
+    Retrieves a zero-copy reference to the Arrow Table from shared memory.
+    This is the highest-performance way to access data, avoiding the final
+    conversion to a Pandas DataFrame.
+    """
+    _connection._send_command({"action": "GetPath", "key": key})
+    response = _connection._receive_response()
+    path = response['path']
+    # The memory-map provides a zero-copy view into the file's contents.
+    # PyArrow can read directly from this memory view.
+    with open(path, "rb") as f:
+        mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
+        with pa.ipc.open_stream(mm) as reader:
+            return reader.read_all()
+
 def delete(key: str):
-    """Deletes an object from the ArrowShelf."""
-    _connection._ensure_connection()
-    cmd = {"action": "Delete", "key": key}
-    _connection._send_command_on_socket(cmd)
-    _connection._receive_response_from_reader()
+    _connection._send_command({"action": "Delete", "key": key})
+    _connection._receive_response()
 
 def list_keys() -> list:
-    """Lists all keys currently on the ArrowShelf."""
-    _connection._ensure_connection()
-    cmd = {"action": "ListKeys"}
-    _connection._send_command_on_socket(cmd)
-    response = _connection._receive_response_from_reader()
+    _connection._send_command({"action": "ListKeys"})
+    response = _connection._receive_response()
     return response.get('keys', [])
 
+def close():
+    _connection.close()
+
 def shutdown_server():
-    """Tells the ArrowShelf daemon to shut down."""
     print("Sending shutdown command to ArrowShelf daemon...")
     try:
-        _connection._ensure_connection()
-        cmd = {"action": "Shutdown"}
-        _connection._send_command_on_socket(cmd)
-        _connection._receive_response_from_reader()
-        print("Shutdown successful.")
-    except ConnectionError:
-        print("Could not connect to server. It might already be stopped.")
+        _connection._send_command({"action": "Shutdown"})
+    except (ConnectionError, BrokenPipeError):
+        print("Could not connect to server, it might already be stopped.")
     finally:
-        _connection.close()
-
-def close():
-    """Closes this client's connection to the daemon."""
-    _connection.close()
+        close()
