@@ -72,42 +72,27 @@ if __name__ == "__main__":
 
 ---
 
-## ⚡ Performance: The Proof is in the Numbers
+## ⚡ Performance: Understanding the Trade-Offs
 
-ArrowShelf truly shines in two key real-world scenarios: scaling across many CPU cores and iterative data analysis.
+ArrowShelf is designed to attack the data transfer bottleneck (`pickle`). Benchmarks show that for workloads that are truly limited by data serialization, ArrowShelf provides a significant advantage.
 
-### Scenario 1: Massively Parallel Core Scaling
+However, for heavily CPU-bound parallel tasks on a single machine, performance is ultimately constrained by Python's Global Interpreter Lock (GIL).
 
-This benchmark shows how pickle becomes a bottleneck as you add more CPU cores, while ArrowShelf's performance remains consistent and superior.
+### Benchmark: Heavy CPU Workload
 
-**Test:** A complex calculation on a 5,000,000 row DataFrame.
+*Test: A complex mathematical simulation on a 10,000,000 row DataFrame using 12 cores.*
 
-| Num Cores | Pickle Time (s) | ArrowShelf Time (s) | Speedup Factor |
-|-----------|-----------------|---------------------|----------------|
-| 2         | 0.6882          | 0.5633              | 1.22x          |
-| 4         | 0.7351          | 0.6419              | 1.15x          |
-| 8         | 0.8925          | 0.8462              | 1.06x          |
-| 12        | 1.0780          | 1.1506              | 0.94x          |
+| Workflow   | Total Time | Breakdown                                       |
+|------------|------------|-------------------------------------------------|
+| Pickle     | **1.72 s** | (Each worker gets a small, independent data chunk) |
+| ArrowShelf | 4.02 s     | (1.3s one-time `put` + 2.7s parallel computation) |
+| **Speedup**| **0.43x**  |                                                 |
 
-**The Verdict:** With pickle, performance gets worse as you add more cores because the main process can't serialize data fast enough. ArrowShelf's "put once, read many" model avoids this bottleneck, making it the superior choice for high-core-count machines.
+**The Verdict & Analysis:**
 
-### Scenario 2: Iterative & Interactive Analysis
+In this CPU-bound scenario, the overhead of coordinating 12 processes accessing a single large shared memory object, combined with GIL contention, makes the `pickle` strategy of "divide and conquer" more effective. This is a classic example of Amdahl's Law: we successfully eliminated the data transfer bottleneck, only to reveal that the next bottleneck is the GIL itself.
 
-This benchmark simulates a data scientist running 5 sequential parallel tasks on the same large dataset.
-
-**Test:** 5 consecutive tasks on a 5,000,000 row DataFrame using 8 cores.
-
-| Workflow    | Total Time for 5 Tasks                      | Speedup |
-|-------------|---------------------------------------------|---------|
-| Pickle      | 4.5989 s                                    | 1.00x   |
-| ArrowShelf  | 4.8653 s (including 0.5s one-time setup)   | 0.95x   |
-
-**The Verdict:** While the total time is similar for a small number of tasks, the story is clear:
-
-- **Pickle** pays the full data-transfer cost every single time, making it inefficient for interactive work.
-- **ArrowShelf** pays a small, one-time setup cost (0.5s), and then every subsequent task is blazingly fast (4.3s for all 5 tasks).
-
-For a real-world workflow with dozens of tasks, the initial setup cost becomes insignificant, and ArrowShelf provides a dramatically faster and more fluid development experience.
+**Where ArrowShelf truly shines is in I/O-bound or interactive workflows where the one-time `put` cost is amortized over many operations.** For example, in a Jupyter notebook where a data scientist loads a large dataset once and then runs dozens of different parallel analyses on it, ArrowShelf's "pay-once" model provides a massive productivity boost that `pickle` cannot match.
 
 ---
 
