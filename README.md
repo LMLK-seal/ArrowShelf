@@ -29,9 +29,33 @@ For FAISS integration (optional):
 pip install faiss-cpu  # or faiss-gpu for GPU support
 ```
 
+### 🚀 Starting the ArrowShelf Server
+
+ArrowShelf requires a server daemon to manage shared memory. Start it before running your applications:
+
+```bash
+# Start the ArrowShelf server
+arrowshelf-server
+
+# Or run in background (Linux/Mac)
+arrowshelf-server &
+
+# Windows background (using PowerShell)
+Start-Process arrowshelf-server -WindowStyle Hidden
+```
+
+The server will run on `localhost:50051` by default.
+
 ## 🚀 Quick Start
 
-### Basic Usage
+### Setting Up ArrowShelf
+
+1. **Start the server** (required):
+```bash
+arrowshelf-server
+```
+
+2. **Basic Usage** (in a separate terminal/process):
 
 ```python
 import arrowshelf
@@ -75,7 +99,21 @@ result = np.mean(x_column)
 
 ## 🎯 Real-World Example: Parallel Nearest Neighbor Search
 
-This example demonstrates how ArrowShelf enables efficient parallel processing with FAISS for approximate nearest neighbor search:
+This example demonstrates how ArrowShelf enables efficient parallel processing with FAISS for approximate nearest neighbor search.
+
+### Prerequisites
+
+1. **Start ArrowShelf server**:
+```bash
+arrowshelf-server
+```
+
+2. **Install dependencies**:
+```bash
+pip install arrowshelf faiss-cpu pandas numpy
+```
+
+### Complete Example
 
 ```python
 import multiprocessing as mp
@@ -124,6 +162,15 @@ def worker_faiss_search(task_data):
 def parallel_nearest_neighbor_demo():
     """Demonstrate parallel processing with ArrowShelf + FAISS"""
     
+    # Check ArrowShelf connection
+    try:
+        arrowshelf.list_keys()
+        print("✅ ArrowShelf server connection OK")
+    except arrowshelf.ConnectionError:
+        print("❌ ERROR: ArrowShelf server not running!")
+        print("Please start the server first: arrowshelf-server")
+        return
+    
     # Generate sample 3D points
     num_points = 100_000
     num_cores = 6
@@ -161,20 +208,35 @@ def parallel_nearest_neighbor_demo():
     
     # Cleanup
     arrowshelf.delete(key)
+    print("🧹 Cleanup completed")
 
 if __name__ == "__main__":
     mp.set_start_method('spawn', force=True)
     parallel_nearest_neighbor_demo()
 ```
 
+### Running the Example
+
+1. **Terminal 1** - Start the server:
+```bash
+arrowshelf-server
+```
+
+2. **Terminal 2** - Run the example:
+```bash
+python nearest_neighbor_demo.py
+```
+
 **Expected Output:**
 ```
+✅ ArrowShelf server connection OK
 🔍 Running parallel k-NN search on 100,000 3D points
 📊 Dataset size: 2.29 MB
 ⚡ Processing with 6 cores...
 ✅ Average 10-NN distance: 210.789151
 🚀 Processing time: 1.0017 seconds
 🔥 Throughput: 99,830 points/second
+🧹 Cleanup completed
 ```
 
 ## 🚀 Project Evolution
