@@ -359,7 +359,7 @@ ArrowShelf has evolved from a simple data sharing concept to a high-performance 
 ### 📊 Performance Visualization
 
 ```
-Traditional Pickle Approach    ████████████████████████████████████ 16.7s
+Traditional Pickle Approach   ████████████████████████████████████ 16.7s
 ArrowShelf + Brute Force      ███████████████████████████████     14.5s
 ArrowShelf + FAISS Exact      ████                               1.84s
 ArrowShelf + FAISS Approx     ██                                 1.00s ⚡
