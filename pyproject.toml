@@ -1,13 +1,13 @@
 [build-system]
-requires = ["maturin>=1.5,<2.2"]
+requires = ["maturin>=1.5,<2.0"]
 build-backend = "maturin"
 
 [project]
 name = "arrowshelf"
-version = "2.2.3"
+version = "2.3.0"
 description = "A lightning-fast, zero-copy, cross-process data store for Python using Apache Arrow and shared memory."
 readme = "README.md"
-authors = [{name = "Yaniv Schwartz", email = "Yaniv.schwartz1@gmail.com"}]
+authors = [{name = "Your Name", email = "your@email.com"}]
 license = {file = "LICENSE"}
 classifiers = [
     "License :: OSI Approved :: MIT License",
@@ -26,8 +26,15 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/LMLK-Seal/arrowshelf"
-Repository = "https://github.com/LMLK-Seal/arrowshelf"
+Homepage = "https://github.com/your-username/arrowshelf"
+Repository = "https://github.com/your-username/arrowshelf"
+
+# --- NEW SECTION FOR OPTIONAL DEPENDENCIES ---
+# This allows users to install the Numba-specific features with:
+# pip install "arrowshelf[numba]"
+[project.optional-dependencies]
+numba = ["numba"]
+
 
 [tool.maturin]
 manifest-path = "Cargo.toml"

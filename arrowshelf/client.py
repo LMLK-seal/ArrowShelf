@@ -3,6 +3,8 @@ import socket
 import io
 import mmap
 import os
+import threading
+import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.ipc
@@ -10,19 +12,31 @@ from .exceptions import ConnectionError, ServerError
 
 SERVER_ADDRESS = ("127.0.0.1", 56789)
 
+# --- THREAD-SAFE CONNECTION MANAGEMENT ---
+# We use a thread-local object to ensure that each thread gets its own
+# independent connection to the server. This prevents race conditions.
+thread_local_storage = threading.local()
+
+def get_connection():
+    """
+    Returns a connection object that is unique to the current thread.
+    Creates a new connection if one doesn't exist for this thread.
+    """
+    if not hasattr(thread_local_storage, 'connection'):
+        # This thread does not have a connection yet, so create one.
+        thread_local_storage.connection = ArrowShelfConnection()
+        thread_local_storage.connection.connect()
+    return thread_local_storage.connection
+
 class ArrowShelfConnection:
     def __init__(self): self.sock,self.reader = None,None
     def connect(self):
         if self.sock: return
         try:
-            self.sock = socket.create_connection(SERVER_ADDRESS, timeout=2)
+            self.sock = socket.create_connection(SERVER_ADDRESS, timeout=5) # Increased timeout
             self.reader = self.sock.makefile('rb')
         except (socket.error, ConnectionRefusedError) as e:
-            raise ConnectionError(f"Could not connect to ArrowShelf daemon at {SERVER_ADDRESS}") from e
-    def is_connected(self):
-        try:
-            with socket.create_connection(SERVER_ADDRESS, timeout=0.5) as s: return True
-        except (socket.error, ConnectionRefusedError): return False
+            raise ConnectionError(f"Could not connect to ArrowShelf daemon") from e
     def close(self):
         if self.sock: self.sock.close()
         self.sock, self.reader = None, None
@@ -38,71 +52,71 @@ class ArrowShelfConnection:
         if resp.get('status') == 'Error': raise ServerError(resp.get('message'))
         return resp
 
-_connection = ArrowShelfConnection()
+# --- API Functions now use the thread-safe get_connection() ---
 
 def put(df: pd.DataFrame) -> str:
-    """Stores a DataFrame in a shared memory-mapped file."""
+    conn = get_connection()
     table = pa.Table.from_pandas(df, preserve_index=False)
     sink = io.BytesIO()
     with pa.ipc.new_stream(sink, table.schema) as writer:
         writer.write_table(table)
     data_bytes = sink.getvalue()
-    data_len = len(data_bytes)
-
-    _connection._send_command({"action": "RequestPath"})
-    response = _connection._receive_response()
+    conn._send_command({"action": "RequestPath"})
+    response = conn._receive_response()
     key = response['message']
     path = response['path']
-
-    with open(path, "wb") as f:
-        f.truncate(data_len)
+    with open(path, "wb") as f: f.truncate(len(data_bytes))
     with open(path, "r+b") as f:
-        with mmap.mmap(f.fileno(), 0) as mm:
-            mm.write(data_bytes)
+        with mmap.mmap(f.fileno(), 0) as mm: mm.write(data_bytes)
     return key
 
 def get(key: str) -> pd.DataFrame:
-    """
-    Retrieves a DataFrame from shared memory. This involves a final copy
-    from Arrow's memory layout to Pandas' memory layout. For highest
-    performance, use get_arrow() instead.
-    """
     table = get_arrow(key)
     return table.to_pandas()
 
-# --- THE NEW, HIGH-PERFORMANCE FUNCTION ---
 def get_arrow(key: str) -> pa.Table:
-    """
-    Retrieves a zero-copy reference to the Arrow Table from shared memory.
-    This is the highest-performance way to access data, avoiding the final
-    conversion to a Pandas DataFrame.
-    """
-    _connection._send_command({"action": "GetPath", "key": key})
-    response = _connection._receive_response()
+    conn = get_connection()
+    conn._send_command({"action": "GetPath", "key": key})
+    response = conn._receive_response()
     path = response['path']
-    # The memory-map provides a zero-copy view into the file's contents.
-    # PyArrow can read directly from this memory view.
     with open(path, "rb") as f:
         mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
         with pa.ipc.open_stream(mm) as reader:
             return reader.read_all()
 
+def get_numpy_view(key: str, column_name: str) -> np.ndarray:
+    table = get_arrow(key) # This now uses a thread-safe connection
+    column = table.column(column_name)
+    if column.num_chunks != 1:
+        # For simplicity, let's combine chunks if needed.
+        table = table.combine_chunks()
+        column = table.column(column_name)
+    data_buffer = column.chunk(0).buffers()[1]
+    numpy_dtype = column.type.to_pandas_dtype()
+    return np.frombuffer(data_buffer, dtype=numpy_dtype)
+
 def delete(key: str):
-    _connection._send_command({"action": "Delete", "key": key})
-    _connection._receive_response()
+    conn = get_connection()
+    conn._send_command({"action": "Delete", "key": key})
+    conn._receive_response()
 
 def list_keys() -> list:
-    _connection._send_command({"action": "ListKeys"})
-    response = _connection._receive_response()
+    conn = get_connection()
+    conn._send_command({"action": "ListKeys"})
+    response = conn._receive_response()
     return response.get('keys', [])
 
 def close():
-    _connection.close()
+    """Closes the connection FOR THE CURRENT THREAD."""
+    if hasattr(thread_local_storage, 'connection'):
+        thread_local_storage.connection.close()
+        del thread_local_storage.connection
 
 def shutdown_server():
+    conn = get_connection()
     print("Sending shutdown command to ArrowShelf daemon...")
     try:
-        _connection._send_command({"action": "Shutdown"})
+        conn._send_command({"action": "Shutdown"})
     except (ConnectionError, BrokenPipeError):
         print("Could not connect to server, it might already be stopped.")
     finally:
